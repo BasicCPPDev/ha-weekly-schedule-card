@@ -82,3 +82,7 @@ A push to `main` by the owner with `[release]` in the commit message creates the
 - Tests of the schedule model: `node --test test/`
 - Visual test page with a fake `hass` object: serve the repository (`python3 -m http.server`) and open
   `test/demo.html` (`?lang=en|fr`, `&dark=1`, `&click=block|track|day|marker|edit|save`).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
