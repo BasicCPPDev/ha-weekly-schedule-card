@@ -35,7 +35,8 @@ const STRINGS = {
     days_short: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     days_letter: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
     days_text: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-    manual: 'Manual', auto: 'Auto',
+    manual: 'Manual', auto: 'Auto', is_on: 'On', is_off: 'Off',
+    auto_locked: 'Auto mode: the device follows the schedule',
     manual_note: 'Manual mode: the schedule is ignored',
     override: 'Manual change until the next change of the schedule', override_chip: 'Override',
     next_change: 'Next change:', none: 'none',
@@ -55,7 +56,8 @@ const STRINGS = {
     days_short: ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'],
     days_letter: ['L', 'M', 'M', 'J', 'V', 'S', 'D'],
     days_text: ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'],
-    manual: 'Manuel', auto: 'Auto',
+    manual: 'Manuel', auto: 'Auto', is_on: 'Allumée', is_off: 'Éteinte',
+    auto_locked: 'Mode auto : la prise suit le programme',
     manual_note: 'Mode manuel : le programme est ignoré',
     override: 'Changement manuel jusqu\'au prochain changement du programme', override_chip: 'Forçage',
     next_change: 'Prochain changement :', none: 'aucun',
@@ -325,13 +327,16 @@ class WeeklyScheduleCard extends BaseElement {
       : this._writes.size ? `<div class="status">${this._t('saving')}</div>` : '';
     const bad = unreadable.length ? `<div class="status err">${this._t('unreadable')} ${unreadable.map((i) => this._t('days_text')[i]).join(', ')}</div>` : '';
 
+    // State of the device, as a switch (its position is the state): usable in manual mode, shown only in auto mode
+    const auto = mode === 'auto';
+    const power = `<label class="power ${on ? 'on' : ''} ${auto ? 'locked' : ''}" title="${auto ? this._t('auto_locked') : ''}">
+        <span>${on ? this._t('is_on') : this._t('is_off')}</span>
+        <span class="switch"><input type="checkbox" data-act="toggle" aria-label="${esc(title)}" ${on ? 'checked' : ''}
+          ${auto ? 'disabled' : ''}><span></span></span></label>`;
+
     this.shadowRoot.innerHTML = `${STYLE}<ha-card>
-      <div class="head">
-        <div class="title">${esc(title)}</div>
-        ${modeCtl}
-        <button class="power ${on ? 'on' : ''}" data-act="toggle" title="${esc(this._config.entity)}">${on ? 'ON' : 'OFF'}</button>
-      </div>
-      <div class="info">${info}</div>
+      <div class="head"><div class="title">${esc(title)}</div>${power}</div>
+      <div class="info">${modeCtl}${info}</div>
       <div class="rules ${mode === 'manual' ? 'dim' : ''}">${rows || `<div class="empty">${this._t('no_rules')}</div>`}</div>
       ${bad}${status}
       <div class="foot"><button class="txt" data-act="add">+ ${this._t('add_rule')}</button></div>
@@ -355,7 +360,10 @@ class WeeklyScheduleCard extends BaseElement {
   _bind() {
     const root = this.shadowRoot;
     root.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => this._setMode(b.dataset.mode)));
-    root.querySelector('[data-act="toggle"]')?.addEventListener('click', () => this._toggle());
+    root.querySelector('[data-act="toggle"]')?.addEventListener('click', (ev) => {
+      ev.preventDefault();         // the switch moves when the device confirms its new state
+      this._toggle();
+    });
     root.querySelector('[data-act="add"]')?.addEventListener('click', () => this._open(null));
     root.querySelectorAll('[data-rule]').forEach((row) => row.addEventListener('click', (ev) => {
       const rule = this._rules[Number(row.dataset.rule)];
@@ -498,10 +506,12 @@ const STYLE = `<style>
   .seg { display: inline-flex; border: 1px solid var(--divider-color); border-radius: 16px; overflow: hidden; flex: none; }
   .seg button { border: 0; background: none; color: var(--secondary-text-color); padding: 4px 12px; }
   .seg button.sel { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-  .power { min-width: 54px; border: 1px solid var(--divider-color); border-radius: 16px; padding: 4px 10px;
-    background: none; color: var(--secondary-text-color); font-weight: 600; flex: none; }
-  .power.on { background: var(--wsc-on); border-color: var(--wsc-on); color: var(--text-primary-color, #fff); }
-  .info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-height: 18px; margin: 6px 0 8px; font-size: .85em; color: var(--secondary-text-color); }
+  .power { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--secondary-text-color); cursor: pointer; }
+  .power.on { color: var(--primary-text-color); font-weight: 500; }
+  .power.locked { cursor: default; }
+  .power .switch input:checked + span { background: var(--wsc-on); }
+  .info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-height: 18px; margin: 8px 0 10px; font-size: .85em; color: var(--secondary-text-color); }
+  .info .seg { font-size: 1.1em; }
   .chip { border-radius: 10px; padding: 0 8px; }
   .chip.warn { background: var(--warning-color, #ff9800); color: #fff; }
   .rules { margin: 0 -14px; border-bottom: 1px solid var(--divider-color); }
@@ -526,6 +536,8 @@ const STYLE = `<style>
     background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .35); transition: transform .15s; }
   .switch input:checked + span { background: var(--primary-color); }
   .switch input:checked + span::before { transform: translateX(16px); }
+  .switch input:disabled { cursor: default; }
+  .switch input:disabled + span { opacity: .5; }
   .status { margin: 8px 0 0; font-size: .85em; color: var(--secondary-text-color); }
   .err { color: var(--error-color); font-size: .9em; }
   .foot { display: flex; justify-content: flex-end; margin-top: 4px; }

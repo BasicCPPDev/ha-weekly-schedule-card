@@ -28,7 +28,8 @@ device that exposes the same per-day texts.
 - Changes are written **at once**, like in the Kasa app; the card checks that the device confirmed them.
 - An enabled rule may not switch the other way at the same time as another enabled rule on the same day (refused,
   with the day); disabled rules have no such limit. At most 20 changes per day, disabled ones included.
-- Header: ON/OFF button, **Manual / Auto** mode, override badge, next change with its action.
+- Header: state of the device as a switch (its position is the state; usable in manual mode, locked and greyed in
+  auto mode, where the device follows the schedule), **Manual / Auto** mode, override badge, next change with its action.
 - No external dependency, English and French (follows the language of Home Assistant), light and dark themes.
 
 ![Editing a rule](images/dialog.png)
