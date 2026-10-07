@@ -1,0 +1,83 @@
+<!doctype html>
+<!-- Page d'essai hors HA : faux objet hass (entités de la prise programmable), servie par un serveur local.
+     Paramètres : ?lang=en|fr  &dark=1  &click=block|track|day|marker  (ouvre une fenêtre pour la capture) -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --primary-color: #03a9f4; --primary-text-color: #212121; --secondary-text-color: #727272;
+    --divider-color: #e0e0e0; --card-background-color: #fff; --secondary-background-color: #f5f5f5;
+    --error-color: #db4437; --success-color: #43a047; --warning-color: #ffa600; --text-primary-color: #fff;
+    --state-switch-on-color: #fdd835; }
+  :root.dark { --primary-text-color: #e1e1e1; --secondary-text-color: #9b9b9b; --divider-color: #3a3a3a;
+    --card-background-color: #1c1c1c; --secondary-background-color: #2b2b2b; }
+  body { margin: 0; padding: 16px; background: #fafafa; font-family: Roboto, Arial, sans-serif; width: 480px; }
+  :root.dark body { background: #111; }
+</style>
+<script>
+  customElements.define('ha-card', class extends HTMLElement {
+    connectedCallback() {
+      Object.assign(this.style, { display: 'block', background: 'var(--card-background-color)', borderRadius: '12px',
+        boxShadow: '0 2px 4px rgba(0,0,0,.15)', color: 'var(--primary-text-color)' });
+    }
+  });
+</script>
+</head>
+<body>
+<weekly-schedule-card id="card"></weekly-schedule-card>
+<script type="module">
+  import '../ha-weekly-schedule-card.js';
+  const q = new URLSearchParams(location.search);
+  if (q.get('dark')) document.documentElement.classList.add('dark');
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const tplink = ['07:00/ON 10:30/OFF', '10:30/OFF', '07:00/ON 10:30/OFF', '07:00/ON 10:30/OFF', '10:30/OFF',
+    '07:00/ON 10:30/OFF', '22:00/ON'];
+  const st = (state, attrs = {}) => ({ state, attributes: attrs });
+  const states = {
+    'switch.prise_programmable': st('on', { friendly_name: 'Prise programmable' }),
+    'select.prise_programmable_mode': st(q.get('mode') ?? 'auto'),
+    'binary_sensor.prise_programmable_override': st(q.get('override') ? 'on' : 'off'),
+    'sensor.prise_programmable_next_change': st('2026-10-07 10:30'),
+  };
+  days.forEach((d, i) => { states[`text.prise_programmable_schedule_${d}`] = st(tplink[i]); });
+  const entities = Object.fromEntries(Object.keys(states).map((id) => [id, { entity_id: id, device_id: 'dev1' }]));
+  const card = document.getElementById('card');
+  let hass;
+  const update = () => { hass = { states: { ...states }, entities, locale: { language: q.get('lang') ?? 'fr' }, callService }; card.hass = hass; };
+  async function callService(domain, service, data) {
+    console.log('callService', domain, service, JSON.stringify(data));
+    if (domain === 'text') states[data.entity_id] = st(data.value);
+    if (domain === 'select') states[data.entity_id] = st(data.option);
+    if (domain === 'switch') states[data.entity_id] = st(states[data.entity_id].state === 'on' ? 'off' : 'on', states[data.entity_id].attributes);
+    setTimeout(update, 300);
+  }
+  card.setConfig({ type: 'custom:weekly-schedule-card', entity: 'switch.prise_programmable' });
+  update();
+  const click = q.get('click');
+  setTimeout(() => {
+    const r = card.shadowRoot;
+    if (click === 'block') r.querySelector('.block').click();
+    if (click === 'marker') r.querySelector('.marker').click();
+    if (click === 'day') r.querySelector('[data-day="1"]').click();
+    if (click === 'track') {
+      const tr = r.querySelector('[data-track="4"]'), b = tr.getBoundingClientRect();
+      tr.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: b.left + b.width * 0.75, clientY: b.top + 5 }));
+    }
+    if (click === 'edit') {   // ajoute une plage puis montre la barre « non enregistré »
+      r.querySelector('[data-day="1"]').click();
+      card.shadowRoot.querySelector('[name="txt"]').value = '10:30/OFF 18:00/ON 20:00/OFF';
+      card.shadowRoot.querySelector('[data-dlg="ok"]').click();
+    }
+    if (click === 'save') {   // édite mardi, enregistre, puis vérifie que la barre disparaît après la confirmation
+      r.querySelector('[data-day="1"]').click();
+      card.shadowRoot.querySelector('[name="txt"]').value = '10:30/OFF 18:00/ON 20:00/OFF';
+      card.shadowRoot.querySelector('[data-dlg="ok"]').click();
+      card.shadowRoot.querySelector('[data-act="save"]').click();
+      setTimeout(() => { document.body.dataset.resultat = JSON.stringify({ footer: !!card.shadowRoot.querySelector('.footer'),
+        mardi: states['text.prise_programmable_schedule_tuesday'].state }); }, 1000);
+    }
+    document.title = 'pret';
+  }, 200);
+</script>
+</body>
+</html>

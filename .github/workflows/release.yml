@@ -1,0 +1,85 @@
+name: Release
+
+# Release on a push to main by the repository owner whose commit message contains [release]
+# ([major] / [minor] / [patch] are accepted too), or by hand (workflow_dispatch).
+# Version like Home Assistant: YYYY.M.D-NN (date in Europe/Paris, NN = release of the day: 00, 01, …).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if release needed
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "${{ github.actor }}" != "${{ github.repository_owner }}" ]; then
+            echo "Commit not from the owner (${{ github.actor }}), no release"
+            echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git log -1 --pretty=%B | grep -qiE '\[(release|major|minor|patch)\]'; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No [release] keyword, no release"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute version
+        if: steps.check.outputs.release == 'true'
+        id: version
+        run: |
+          DATE=$(TZ=Europe/Paris date +%Y.%-m.%-d)
+          N=$(git tag -l "${DATE}-*" | grep -cE "^${DATE//./\\.}-[0-9]{2}$" || true)
+          VERSION="${DATE}-$(printf %02d "$N")"
+          PREVIOUS=$(git tag -l --sort=-creatordate | head -1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION (previous: ${PREVIOUS:-none})"
+
+      - name: Set version in the card, commit, tag
+        if: steps.check.outputs.release == 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          sed -i "s/^const VERSION = '[^']*';/const VERSION = '${VERSION}';/" ha-weekly-schedule-card.js
+          grep -q "^const VERSION = '${VERSION}';" ha-weekly-schedule-card.js
+          if ! git diff --quiet; then
+            git commit -am "chore: version ${VERSION}"
+            git push origin HEAD:main
+          fi
+          git tag -a "${VERSION}" -m "Release ${VERSION}"
+          git push origin "${VERSION}"
+
+      - name: Create GitHub release
+        if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PREVIOUS="${{ steps.version.outputs.previous }}"
+          RANGE=${PREVIOUS:+${PREVIOUS}..}HEAD
+          {
+            echo "## What's changed"
+            echo ""
+            git log "$RANGE" --pretty=format:"- %s" --no-merges | grep -v "^- chore: version " || echo "- First release"
+            echo ""
+            echo ""
+            echo "Install with HACS (custom repository, category Dashboard) or copy \`ha-weekly-schedule-card.js\` to"
+            echo "\`/config/www/\`. See the [README](https://github.com/${{ github.repository }}#readme)."
+          } > release_notes.md
+          gh release create "$VERSION" ha-weekly-schedule-card.js --title "$VERSION" --notes-file release_notes.md
