@@ -14,7 +14,7 @@
  * release of the day), set by the release workflow.
  */
 
-const VERSION = '2026.10.7-00';
+const VERSION = '2026.10.7-01';
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const MAX_CHANGES = 20;
 const CONFIRM_MS = 15000;
